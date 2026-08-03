@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AFL Analyst Pro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#060a08;
+    --pitch:#0e1a13;
+    --pitch-2:#132419;
+    --glass: rgba(232,255,214,0.055);
+    --glass-strong: rgba(232,255,214,0.10);
+    --border: rgba(232,255,214,0.14);
+    --lime:#c8ff4d;
+    --lime-dim:#8fcb2e;
+    --ink:#e7efe6;
+    --muted:#8fa096;
+    --warn:#e2543a;
+    --radius:20px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--void);
+    color:var(--ink);
+    font-family:'Manrope', sans-serif;
+    display:flex; justify-content:center;
+    overflow-x:hidden;
+  }
+  @media (prefers-reduced-motion: no-preference){
+    .glow{ animation: glowPulse 2.6s ease-out 1; }
+    .ring{ animation: ringSpin 90s linear infinite; }
+    .bar-fill{ transition: width 1.1s cubic-bezier(.16,1,.3,1); }
+    .msg{ animation: rise .32s cubic-bezier(.16,1,.3,1) both; }
+  }
+  @keyframes glowPulse{ 0%{opacity:.15;} 35%{opacity:.65;} 100%{opacity:.38;} }
+  @keyframes ringSpin{ to{ transform:rotate(360deg); } }
+  @keyframes rise{ from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
+
+  /* ---------------------------------------------------------- backdrop */
+  .stadium{
+    position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none;
+  }
+  .glow{
+    position:absolute; top:-30%; left:50%; transform:translateX(-50%);
+    width:1100px; height:900px;
+    background: radial-gradient(ellipse at 50% 0%, rgba(200,255,77,0.16) 0%, rgba(200,255,77,0.05) 30%, transparent 62%);
+  }
+  .ring{
+    position:absolute; top:8%; left:50%; width:1400px; height:1400px;
+    margin-left:-700px;
+    border-radius:50%;
+    border:1px solid rgba(232,255,214,0.05);
+  }
+  .ring::before{
+    content:''; position:absolute; inset:90px; border-radius:50%;
+    border:1px solid rgba(232,255,214,0.045);
+  }
+  .vignette{
+    position:absolute; inset:0;
+    background: radial-gradient(ellipse 90% 60% at 50% 15%, transparent 40%, var(--void) 100%);
+  }
+
+  /* ---------------------------------------------------------- app frame */
+  .frame{
+    position:relative; z-index:1;
+    width:100%; max-width:460px; min-height:100vh;
+    display:flex; flex-direction:column;
+    padding:18px 16px 14px;
+  }
+
+  header{
+    position:sticky; top:14px; z-index:5;
+    background:var(--glass-strong);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border:1px solid var(--border);
+    border-radius:18px;
+    padding:13px 16px;
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:14px;
+  }
+  .brand{ display:flex; align-items:baseline; gap:2px; }
+  .brand .word{
+    font-family:'Anton', sans-serif; font-size:1.5rem; letter-spacing:0.01em;
+    color:var(--ink); line-height:1;
+  }
+  .brand .word span{ color:var(--lime); }
+  .brand .pro{
+    font-family:'JetBrains Mono', monospace; font-size:0.55rem; color:var(--void);
+    background:var(--lime); border-radius:5px; padding:2px 5px; margin-left:6px;
+    font-weight:600; letter-spacing:0.04em; align-self:center;
+  }
+  .status{ display:flex; align-items:center; gap:6px; font-family:'JetBrains Mono', monospace; font-size:0.62rem; color:var(--muted); }
+  .dot{ width:6px; height:6px; border-radius:50%; background:var(--warn); flex-shrink:0; }
+  .dot.on{ background:var(--lime); box-shadow:0 0 8px var(--lime); }
+
+  /* ---------------------------------------------------------- pill tabs */
+  .tabs{
+    display:flex; gap:8px; overflow-x:auto; padding:2px 2px 14px;
+    scrollbar-width:none;
+  }
+  .tabs::-webkit-scrollbar{ display:none; }
+  .tab{
+    flex:0 0 auto;
+    background:var(--glass); border:1px solid var(--border); color:var(--ink);
+    font-family:'Manrope', sans-serif; font-weight:600; font-size:0.78rem;
+    padding:9px 15px; border-radius:999px; cursor:pointer; white-space:nowrap;
+    transition:.15s ease;
+  }
+  .tab:hover{ border-color:var(--lime); color:var(--lime); }
+  .tab .k{ opacity:0.55; font-weight:500; margin-right:5px; }
+
+  /* ---------------------------------------------------------- thread */
+  main{ flex:1; display:flex; flex-direction:column; gap:12px; padding-bottom:14px; }
+  .empty{
+    margin-top:20px; padding:20px; text-align:center;
+    color:var(--muted); font-size:0.85rem; line-height:1.6;
+  }
+  .empty b{ color:var(--ink); }
+
+  .msg{ display:flex; }
+  .msg.user{ justify-content:flex-end; }
+  .msg.bot{ justify-content:flex-start; }
+  .bubble{
+    max-width:84%; padding:12px 15px; font-size:0.92rem; line-height:1.5;
+  }
+  .msg.user .bubble{
+    background:var(--lime); color:var(--void); font-weight:600;
+    border-radius:18px 18px 4px 18px;
+  }
+  .msg.bot .bubble{
+    background:var(--glass); border:1px solid var(--border);
+    backdrop-filter: blur(12px);
+    border-radius:4px 18px 18px 18px;
+  }
+  .meta{
+    margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;
+    font-family:'JetBrains Mono', monospace; font-size:0.62rem; color:var(--muted);
+  }
+  .meta .chip{
+    border:1px solid var(--border); border-radius:999px; padding:2px 8px;
+  }
+
+  /* ---------------------------------------------------------- scoreboard card (signature element) */
+  .scorecard{
+    width:100%; margin-top:2px;
+    background:linear-gradient(180deg, var(--pitch-2) 0%, var(--pitch) 100%);
+    border:1px solid var(--border); border-radius:var(--radius);
+    padding:16px; position:relative; overflow:hidden;
+  }
+  .scorecard::before{
+    content:''; position:absolute; top:-40%; left:50%; transform:translateX(-50%);
+    width:260px; height:180px;
+    background:radial-gradient(ellipse at center, rgba(200,255,77,0.14), transparent 70%);
+    pointer-events:none;
+  }
+  .sc-label{
+    font-family:'JetBrains Mono', monospace; font-size:0.6rem; letter-spacing:0.12em;
+    color:var(--lime); text-transform:uppercase; margin-bottom:10px; display:block;
+  }
+  .sc-teams{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px; gap:8px; }
+  .sc-team{ font-family:'Manrope', sans-serif; font-weight:700; font-size:0.86rem; color:var(--ink); }
+  .sc-team.away{ text-align:right; }
+  .sc-vs{ font-family:'JetBrains Mono', monospace; font-size:0.68rem; color:var(--muted); }
+  .sc-pcts{ display:flex; justify-content:space-between; margin-bottom:8px; }
+  .sc-pct{ font-family:'Anton', sans-serif; font-size:2.1rem; line-height:1; color:var(--ink); }
+  .sc-pct.lead{ color:var(--lime); }
+  .bar-track{
+    width:100%; height:10px; border-radius:999px; overflow:hidden;
+    background:rgba(255,255,255,0.06); display:flex; margin-bottom:12px;
+  }
+  .bar-fill{ height:100%; background:linear-gradient(90deg, var(--lime-dim), var(--lime)); width:0%; }
+  .bar-fill.away{ background:linear-gradient(90deg, rgba(232,255,214,0.35), rgba(232,255,214,0.5)); }
+  .sc-foot{
+    display:flex; justify-content:space-between; align-items:center;
+    font-family:'JetBrains Mono', monospace; font-size:0.62rem; color:var(--muted);
+    border-top:1px solid var(--border); padding-top:10px;
+  }
+  .sc-model{ background:var(--glass); border:1px solid var(--border); border-radius:6px; padding:3px 7px; }
+  .sc-disclaimer{
+    margin-top:10px; font-size:0.68rem; color:var(--muted); display:flex; gap:6px; align-items:flex-start;
+    line-height:1.4;
+  }
+  .sc-disclaimer .warn-dot{ color:var(--warn); flex-shrink:0; }
+
+  /* ---------------------------------------------------------- player ranking card */
+  .rankcard{
+    width:100%; background:linear-gradient(180deg, var(--pitch-2), var(--pitch));
+    border:1px solid var(--border); border-radius:var(--radius); padding:16px;
+  }
+  .rank-row{ display:flex; align-items:center; gap:10px; margin:9px 0; }
+  .rank-name{ flex:0 0 44%; font-size:0.78rem; font-weight:600; color:var(--ink); }
+  .rank-bar-track{ flex:1; height:8px; border-radius:999px; background:rgba(255,255,255,0.06); overflow:hidden; }
+  .rank-bar-fill{ height:100%; background:linear-gradient(90deg, var(--lime-dim), var(--lime)); width:0%; }
+  .rank-val{ flex:0 0 auto; font-family:'JetBrains Mono', monospace; font-size:0.72rem; color:var(--lime); width:34px; text-align:right; }
+
+  /* ---------------------------------------------------------- composer */
+  .composer{
+    position:sticky; bottom:14px; z-index:5;
+    display:flex; gap:8px;
+    background:var(--glass-strong);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border:1px solid var(--border); border-radius:999px;
+    padding:6px 6px 6px 18px;
+    margin-top:auto;
+  }
+  .composer input{
+    flex:1; background:transparent; border:none; outline:none; color:var(--ink);
+    font-family:'Manrope', sans-serif; font-size:0.9rem; padding:10px 0;
+  }
+  .composer input::placeholder{ color:var(--muted); }
+  .send{
+    width:42px; height:42px; border-radius:50%; border:none; cursor:pointer;
+    background:var(--lime); color:var(--void); display:flex; align-items:center; justify-content:center;
+    flex-shrink:0; transition:transform .12s ease;
+  }
+  .send:hover{ transform:scale(1.06); }
+  .send:disabled{ opacity:0.4; cursor:default; transform:none; }
+  .send svg{ width:18px; height:18px; }
+
+  ::-webkit-scrollbar{ width:6px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border); border-radius:99px; }
+</style>
+</head>
+<body>
+
+<div class="stadium">
+  <div class="glow"></div>
+  <div class="ring"></div>
+  <div class="vignette"></div>
+</div>
+
+<div class="frame">
+  <header>
+    <div class="brand">
+      <span class="word">AFL <span>ANALYST</span></span>
+      <span class="pro">PRO</span>
+    </div>
+    <div class="status">
+      <span id="statusDot" class="dot"></span>
+      <span id="statusText">connecting&hellip;</span>
+    </div>
+  </header>
+
+  <div class="tabs" id="tabs">
+    <button class="tab" data-q="Who will win Geelong vs Carlton on 2015-05-10?"><span class="k">predict</span>Geelong vs Carlton</button>
+    <button class="tab" data-q="What were the Cats stats last round?"><span class="k">stats</span>Cats last round</button>
+    <button class="tab" data-q="How does the AFL finals system work?"><span class="k">ask</span>Finals system</button>
+    <button class="tab" data-q="Show me the AFL ladder for 2015"><span class="k">ladder</span>2015 season</button>
+    <button class="tab" data-q="What's the capital of France?"><span class="k">test</span>Off-topic check</button>
+  </div>
+
+  <main id="thread">
+    <div class="empty" id="emptyState">
+      Ask about a club's recent form, general AFL knowledge, or predict an upcoming match.<br>
+      <b>Tap a suggestion above to get started.</b>
+    </div>
+  </main>
+
+  <form class="composer" id="chatForm">
+    <input id="msgInput" type="text" placeholder="Ask AFL Analyst Pro&hellip;" autocomplete="off" />
+    <button type="submit" class="send" id="sendBtn" aria-label="Send">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+const API_BASE = window.location.hash.replace('#','') || 'http://localhost:8000';
+let conversationId = null;
+
+const thread = document.getElementById('thread');
+const emptyState = document.getElementById('emptyState');
+const form = document.getElementById('chatForm');
+const input = document.getElementById('msgInput');
+const sendBtn = document.getElementById('sendBtn');
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+
+async function checkHealth(){
+  try{
+    const r = await fetch(API_BASE + '/health');
+    const data = await r.json();
+    if(r.ok){
+      statusDot.classList.add('on');
+      const llm = (data.llm_backend || '').toLowerCase().includes('reachable') ? 'live LLM' : 'templates';
+      statusText.textContent = 'connected \u00B7 ' + llm;
+    } else throw new Error();
+  }catch(e){
+    statusDot.classList.remove('on');
+    statusText.textContent = 'api offline \u00B7 start uvicorn';
+  }
+}
+checkHealth();
+setInterval(checkHealth, 15000);
+
+function clearEmpty(){ if(emptyState) emptyState.remove(); }
+
+function addUserMessage(text){
+  clearEmpty();
+  const wrap = document.createElement('div');
+  wrap.className = 'msg user';
+  wrap.innerHTML = `<div class="bubble"></div>`;
+  wrap.querySelector('.bubble').textContent = text;
+  thread.appendChild(wrap);
+  scrollToBottom();
+}
+
+function scrollToBottom(){ window.scrollTo({ top: document.body.scrollHeight, behavior:'smooth' }); }
+
+function buildMeta(data){
+  let html = `<span class="chip">${data.intent}</span><span class="chip">${data.latency_ms}ms</span>`;
+  if(data.tools_called && data.tools_called.length) html += `<span class="chip">${data.tools_called.join(', ')}</span>`;
+  if(data.needs_clarification) html += `<span class="chip">awaiting reply</span>`;
+  return html;
+}
+
+function buildScorecard(m){
+  const home = m.home_team, away = m.away_team;
+  const hp = m.home_win_probability_pct, ap = m.away_win_probability_pct;
+  const homeLead = hp >= ap;
+  const el = document.createElement('div');
+  el.className = 'scorecard';
+  el.innerHTML = `
+    <span class="sc-label">Match prediction</span>
+    <div class="sc-teams">
+      <span class="sc-team">${home}</span>
+      <span class="sc-vs">VS</span>
+      <span class="sc-team away">${away}</span>
+    </div>
+    <div class="sc-pcts">
+      <span class="sc-pct ${homeLead ? 'lead' : ''}">${hp.toFixed(1)}%</span>
+      <span class="sc-pct ${!homeLead ? 'lead' : ''}">${ap.toFixed(1)}%</span>
+    </div>
+    <div class="bar-track">
+      <div class="bar-fill" style="width:0%"></div>
+      <div class="bar-fill away" style="width:0%"></div>
+    </div>
+    <div class="sc-foot">
+      <span>${m.winner} favoured</span>
+      <span class="sc-model">${(m.model||'model').split(' ')[0]}</span>
+    </div>
+    <div class="sc-disclaimer"><span class="warn-dot">&#9888;</span><span>${m.disclaimer || 'This is a predicted probability, not a certainty.'}</span></div>
+  `;
+  requestAnimationFrame(()=>{
+    const fills = el.querySelectorAll('.bar-fill');
+    fills[0].style.width = hp + '%';
+    fills[1].style.width = ap + '%';
+  });
+  return el;
+}
+
+function buildRankcard(m){
+  const el = document.createElement('div');
+  el.className = 'rankcard';
+  const maxVal = Math.max(...m.ranking.map(r => r.predicted_value)) || 1;
+  el.innerHTML = `<span class="sc-label">Predicted ${m.stat_type} leader &mdash; ${m.team}</span>`;
+  m.ranking.slice(0,5).forEach(r=>{
+    const pct = (r.predicted_value / maxVal * 100).toFixed(1);
+    const row = document.createElement('div');
+    row.className = 'rank-row';
+    row.innerHTML = `<span class="rank-name">${r.player_name}</span><div class="rank-bar-track"><div class="rank-bar-fill" style="width:0%"></div></div><span class="rank-val">${r.predicted_value}</span>`;
+    el.appendChild(row);
+    requestAnimationFrame(()=>{ row.querySelector('.rank-bar-fill').style.width = pct + '%'; });
+  });
+  const disc = document.createElement('div');
+  disc.className = 'sc-disclaimer';
+  disc.innerHTML = `<span class="warn-dot">&#9888;</span><span>${m.disclaimer || 'This is a predicted estimate, not a certainty.'}</span>`;
+  el.appendChild(disc);
+  return el;
+}
+
+function addBotMessage(data){
+  clearEmpty();
+  const wrap = document.createElement('div');
+  wrap.className = 'msg bot';
+  wrap.style.flexDirection = 'column';
+  wrap.style.alignItems = 'flex-start';
+  wrap.style.width = '100%';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.style.maxWidth = '84%';
+  bubble.textContent = data.response;
+  wrap.appendChild(bubble);
+
+  if(data.prediction_metadata){
+    const m = data.prediction_metadata;
+    const card = m.home_win_probability_pct !== undefined ? buildScorecard(m)
+                : (m.ranking && m.ranking.length ? buildRankcard(m) : null);
+    if(card){ card.style.marginTop = '8px'; wrap.appendChild(card); }
+  }
+
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.innerHTML = buildMeta(data);
+  wrap.appendChild(meta);
+
+  thread.appendChild(wrap);
+  scrollToBottom();
+}
+
+async function sendMessage(text){
+  if(!text.trim()) return;
+  addUserMessage(text);
+  input.value = '';
+  sendBtn.disabled = true;
+  try{
+    const res = await fetch(API_BASE + '/chat', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({message:text, conversation_id: conversationId})
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    conversationId = data.conversation_id;
+    addBotMessage(data);
+  }catch(err){
+    addBotMessage({ response: `Could not reach AFL Analyst Pro at ${API_BASE}. Is uvicorn running?`, intent:'error', latency_ms:0, tools_called:[] });
+  }finally{
+    sendBtn.disabled = false;
+    checkHealth();
+  }
+}
+
+form.addEventListener('submit', (e)=>{ e.preventDefault(); sendMessage(input.value); });
+document.getElementById('tabs').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.tab');
+  if(btn) sendMessage(btn.dataset.q);
+});
+</script>
+</body>
+</html>
